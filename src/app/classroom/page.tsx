@@ -24,23 +24,16 @@ export default function ClassroomPage() {
 
   const initRealtime = () => {
     if (!supabaseUrl || !supabaseAnonKey) {
-      setStatusText('خطأ: متغيرات البيئة مفقودة');
+      setStatusText('خطأ: مفاتيح Supabase مفقودة في Vercel');
       return;
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      realtime: {
-        params: {
-          eventsPerSecond: 20,
-        },
-      },
-    });
+    setStatusText('جاري الاتصال...');
 
-    // استخدام اسم قناة فريد وثابت
-    const channel = supabase.channel('classroom-room-1', {
-      config: {
-        broadcast: { self: true },
-      },
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    const channel = supabase.channel('room-classroom-v1', {
+      config: { broadcast: { self: true } }
     });
 
     channel
