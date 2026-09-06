@@ -1,10 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+// إنشاء العميل مرة واحدة خارج المكون لتجنب Re-creation المكرر
+let supabase: SupabaseClient | null = null;
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+    },
+  });
+}
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
@@ -20,20 +32,25 @@ export default function ClassroomPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const initRealtime = () => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      setStatusText('خطأ: مفاتيح Supabase مفقودة في Vercel');
+    if (!supabase) {
+      setStatusText('خطأ: متغيرات البيئة مفقودة');
       return;
+    }
+
+    // تنظيف القناة القديمة إن وجدت قبل فتح قناة جديدة
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
     }
 
     setStatusText('جاري الاتصال...');
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-    const channel = supabase.channel('room-classroom-v1', {
-      config: { broadcast: { self: true } }
+    const channel = supabase.channel('room-classroom-main', {
+      config: {
+        broadcast: { ack: false, self: true },
+      },
     });
 
     channel
@@ -53,27 +70,30 @@ export default function ClassroomPage() {
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
+        console.log('Realtime Status:', status, err);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        } else if (status === 'CLOSED') {
           setIsConnected(false);
-          setStatusText('خطأ في الاتصال - اضغط إعادة الاتصال');
+          setStatusText('مغلق - اضغط إعادة الاتصال');
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('خطأ في الاتصال (تحقق من إعدادات Supabase)');
         }
       });
 
     channelRef.current = channel;
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   };
 
   useEffect(() => {
-    const cleanup = initRealtime();
+    initRealtime();
+
     return () => {
-      if (cleanup) cleanup();
+      if (channelRef.current && supabase) {
+        supabase.removeChannel(channelRef.current);
+      }
     };
   }, []);
 
