@@ -1,15 +1,19 @@
 import './globals.css';
-import { ReactNode } from 'react';
+import React from 'react';
 
 export const metadata = {
-  title: 'منصة التعليم والبث المباشر',
-  description: 'تطبيق التعليم التفاعلي والبث المباشر',
+  title: 'Live Classroom App',
+  description: 'Interactive classroom with real-time whiteboard and chat',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ar" dir="rtl">
-      <body className="bg-slate-950 text-white antialiased">
+      <body className="bg-slate-900 text-white antialiased">
         {children}
       </body>
     </html>
