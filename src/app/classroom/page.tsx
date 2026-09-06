@@ -15,6 +15,7 @@ export default function ClassroomPage() {
   const [penColor, setPenColor] = useState('#6366f1');
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHandsList, setRaisedHandsList] = useState<string[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -22,14 +23,16 @@ export default function ClassroomPage() {
   const channelRef = useRef<any>(null);
 
   useEffect(() => {
-    // تفعيل استقبال الأحداث المباشرة من كل الأطراف
-    const channel = supabase.channel('room-classroom-1', {
-      config: { broadcast: { self: true } }
+    // قناة واحدة مشتركة للسبورة والرفع والدردشة
+    const channel = supabase.channel('classroom-global-room', {
+      config: { 
+        broadcast: { self: true, ack: true },
+        presence: { key: userName }
+      }
     });
 
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
-        // إذا كان الرسم آتياً من مستخدم آخر فقط نقوم برسمه
         drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
       })
       .on('broadcast', { event: 'clear' }, () => {
@@ -42,7 +45,11 @@ export default function ClassroomPage() {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setIsConnected(true);
+        }
+      });
 
     channelRef.current = channel;
 
@@ -53,7 +60,7 @@ export default function ClassroomPage() {
     fetchMessages();
 
     const msgChannel = supabase
-      .channel('classroom-chat')
+      .channel('classroom-chat-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         setMessages((prev) => [...prev, payload.new]);
       })
@@ -151,7 +158,6 @@ export default function ClassroomPage() {
       });
     }
 
-    // إرسال تنبيه في المحادثة المباشرة لضمان الملاحظة
     if (newStatus) {
       await supabase.from('messages').insert([{ 
         sender: 'النظام 🔔', 
@@ -171,7 +177,12 @@ export default function ClassroomPage() {
     <div className="min-h-screen bg-slate-900 text-white p-6 flex flex-col justify-between" dir="rtl">
       <header className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center flex-wrap gap-4">
         <div>
-          <h1 className="text-xl font-bold text-indigo-400">غرفة الفصل الدراسي المباشر</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-indigo-400">غرفة الفصل الدراسي المباشر</h1>
+            <span className={`px-2 py-0.5 rounded text-[10px] ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
+              {isConnected ? 'متصل بالمزامنة المباشرة ●' : 'جاري الاتصال...'}
+            </span>
+          </div>
           <p className="text-xs text-slate-400">إدارة الدور، التحكم بالسبورة، ورفع اليد في الوقت الفعلي</p>
         </div>
 
@@ -248,7 +259,7 @@ export default function ClassroomPage() {
           <h2 className="text-sm font-semibold mb-3 text-slate-300">المحادثات المباشرة</h2>
           <div className="flex-1 overflow-y-auto space-y-2 mb-4 max-h-[350px] p-2 bg-slate-900/50 rounded-lg">
             {messages.map((msg, idx) => (
-              <div key={idx} className={`p-2 rounded text-sm border ${msg.sender.includes('النظام') ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-slate-800 border-slate-700'}`}>
+              <div key={idx} className={`p-2 rounded text-sm border ${msg.sender?.includes('النظام') ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-slate-800 border-slate-700'}`}>
                 <span className="text-indigo-400 font-bold block text-xs">{msg.sender || 'مستخدم'}</span>
                 <span className="text-slate-200">{msg.content}</span>
               </div>
