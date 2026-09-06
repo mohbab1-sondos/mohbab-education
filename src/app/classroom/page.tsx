@@ -51,6 +51,21 @@ export default function ClassroomPage() {
     };
   }, []);
 
+  // دالة تحويل إحداثيات الماوس لتتطابق بدقة مع مقاس الكانفاس الفعلي
+  const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  };
+
   const drawOnCanvas = (prevX: number, prevY: number, currX: number, currY: number, color: string = '#6366f1') => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -67,38 +82,29 @@ export default function ClassroomPage() {
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    prevCoords.current = { x, y };
+    const coords = getCanvasCoordinates(e);
+    prevCoords.current = coords;
     setIsDrawing(true);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !prevCoords.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const currX = e.clientX - rect.left;
-    const currY = e.clientY - rect.top;
 
+    const coords = getCanvasCoordinates(e);
     const prevX = prevCoords.current.x;
     const prevY = prevCoords.current.y;
 
-    drawOnCanvas(prevX, prevY, currX, currY);
+    drawOnCanvas(prevX, prevY, coords.x, coords.y);
 
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'draw',
-        payload: { prevX, prevY, currX, currY, color: '#6366f1' }
+        payload: { prevX, prevY, currX: coords.x, currY: coords.y, color: '#6366f1' }
       });
     }
 
-    prevCoords.current = { x: currX, y: currY };
+    prevCoords.current = coords;
   };
 
   const stopDrawing = () => {
@@ -152,17 +158,17 @@ export default function ClassroomPage() {
       </header>
 
       <main className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 my-4">
-        <div className="md:col-span-2 bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col justify-between items-center relative overflow-hidden">
+        <div className="md:col-span-2 bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col justify-between items-center relative overflow-hidden min-h-[450px]">
           <span className="absolute top-3 right-4 text-xs text-slate-500 font-mono">Live Sync Whiteboard</span>
           <canvas 
             ref={canvasRef} 
-            width={700} 
-            height={400}
+            width={1280} 
+            height={720}
             onMouseDown={startDrawing}
             onMouseMove={draw}
             onMouseUp={stopDrawing}
             onMouseLeave={stopDrawing}
-            className="w-full h-full bg-slate-900/60 rounded border border-slate-800 cursor-crosshair"
+            className="w-full h-full bg-slate-900/60 rounded border border-slate-800 cursor-crosshair touch-none"
           />
         </div>
 
