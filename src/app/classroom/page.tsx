@@ -5,7 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
@@ -15,6 +14,7 @@ export default function ClassroomPage() {
   const [penColor, setPenColor] = useState('#6366f1');
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHandsList, setRaisedHandsList] = useState<string[]>([]);
+  const [statusText, setStatusText] = useState('جاري الاتصال...');
   const [isConnected, setIsConnected] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -22,13 +22,25 @@ export default function ClassroomPage() {
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
   const channelRef = useRef<any>(null);
 
-  useEffect(() => {
-    // قناة واحدة مشتركة للسبورة والرفع والدردشة
-    const channel = supabase.channel('classroom-global-room', {
-      config: { 
-        broadcast: { self: true, ack: true },
-        presence: { key: userName }
-      }
+  const initRealtime = () => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      setStatusText('خطأ: متغيرات البيئة مفقودة');
+      return;
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 20,
+        },
+      },
+    });
+
+    // استخدام اسم قناة فريد وثابت
+    const channel = supabase.channel('classroom-room-1', {
+      config: {
+        broadcast: { self: true },
+      },
     });
 
     channel
@@ -45,30 +57,30 @@ export default function ClassroomPage() {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         }
       })
+      .on('broadcast', { event: 'chat' }, ({ payload }) => {
+        setMessages((prev) => [...prev, payload]);
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
+          setStatusText('متصل بالمزامنة المباشرة ●');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('خطأ في الاتصال - اضغط إعادة الاتصال');
         }
       });
 
     channelRef.current = channel;
 
-    const fetchMessages = async () => {
-      const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-      if (data) setMessages(data);
-    };
-    fetchMessages();
-
-    const msgChannel = supabase
-      .channel('classroom-chat-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
-      })
-      .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(msgChannel);
+    };
+  };
+
+  useEffect(() => {
+    const cleanup = initRealtime();
+    return () => {
+      if (cleanup) cleanup();
     };
   }, []);
 
@@ -115,7 +127,7 @@ export default function ClassroomPage() {
 
     drawOnCanvas(prevX, prevY, coords.x, coords.y, penColor);
 
-    if (channelRef.current) {
+    if (channelRef.current && isConnected) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'draw',
@@ -141,36 +153,44 @@ export default function ClassroomPage() {
   const handleClearBoard = () => {
     if (role !== 'teacher') return;
     clearLocalCanvas();
-    if (channelRef.current) {
+    if (channelRef.current && isConnected) {
       channelRef.current.send({ type: 'broadcast', event: 'clear', payload: {} });
     }
   };
 
-  const toggleRaiseHand = async () => {
+  const toggleRaiseHand = () => {
     const newStatus = !handRaised;
     setHandRaised(newStatus);
 
-    if (channelRef.current) {
+    if (channelRef.current && isConnected) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'raise-hand',
         payload: { studentName: userName, raised: newStatus }
       });
-    }
 
-    if (newStatus) {
-      await supabase.from('messages').insert([{ 
-        sender: 'النظام 🔔', 
-        content: `قام الطالب (${userName}) برفع اليد للاستئذان ✋` 
-      }]);
+      if (newStatus) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'chat',
+          payload: { sender: 'النظام 🔔', content: `قام الطالب (${userName}) برفع اليد للاستئذان ✋` }
+        });
+      }
     }
   };
 
-  const sendMessage = async () => {
+  const sendMessage = () => {
     if (!input.trim()) return;
-    const text = input;
+    const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
+    
+    if (channelRef.current && isConnected) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'chat',
+        payload: msgData
+      });
+    }
     setInput('');
-    await supabase.from('messages').insert([{ sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: text }]);
   };
 
   return (
@@ -179,9 +199,14 @@ export default function ClassroomPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-indigo-400">غرفة الفصل الدراسي المباشر</h1>
-            <span className={`px-2 py-0.5 rounded text-[10px] ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
-              {isConnected ? 'متصل بالمزامنة المباشرة ●' : 'جاري الاتصال...'}
+            <span className={`px-2 py-0.5 rounded text-[10px] ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+              {statusText}
             </span>
+            {!isConnected && (
+              <button onClick={() => initRealtime()} className="text-[10px] bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 px-2 py-0.5 rounded border border-indigo-500/30">
+                إعادة الاتصال 🔄
+              </button>
+            )}
           </div>
           <p className="text-xs text-slate-400">إدارة الدور، التحكم بالسبورة، ورفع اليد في الوقت الفعلي</p>
         </div>
