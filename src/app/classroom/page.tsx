@@ -3,8 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// قيم صريحة ومباشرة لتجاوز مشاكل Vercel Environment Variables
+const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
+const SUPABASE_ANON_KEY = 'ضع_هنا_مفتاح_ANON_KEY_الحقيقي_الطويل';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
@@ -23,21 +26,17 @@ export default function ClassroomPage() {
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const initRealtime = () => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      setStatusText('خطأ: NEXT_PUBLIC_SUPABASE_ANON_KEY غير معرف في Vercel');
-      return;
-    }
-
-    setStatusText('جاري الاتصال...');
-
-    // إنشاء Supabase Client بمفاتيح صريحة
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
 
-    const channel = supabase.channel('room-classroom-v1');
+    setStatusText('جاري الاتصال بالمزامنة...');
+
+    const channel = supabase.channel('classroom-room-live', {
+      config: {
+        broadcast: { self: true }
+      }
+    });
 
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
@@ -57,16 +56,13 @@ export default function ClassroomPage() {
         setMessages((prev) => [...prev, payload]);
       })
       .subscribe((status, err) => {
-        console.log('Realtime Connection Status:', status, err);
+        console.log('Realtime Status:', status, err);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
-        } else if (status === 'CHANNEL_ERROR') {
+        } else {
           setIsConnected(false);
-          setStatusText('خطأ مفتاح الاتصال - تحقق من Vercel Env Vars');
-        } else if (status === 'CLOSED') {
-          setIsConnected(false);
-          setStatusText('مغلق - اضغط إعادة الاتصال');
+          setStatusText(`حالة الاتصال: ${status}`);
         }
       });
 
@@ -75,6 +71,11 @@ export default function ClassroomPage() {
 
   useEffect(() => {
     initRealtime();
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
   }, []);
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
