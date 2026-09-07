@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
-// قيم صريحة ومباشرة لتجاوز مشاكل Vercel Environment Variables
+// قيم صريحة ومباشرة
 const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-const SUPABASE_ANON_KEY = 'ضع_هنا_مفتاح_ANON_KEY_الحقيقي_الطويل';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...ضع_مفتاحك_الحقيقي_هنا';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -23,40 +23,38 @@ export default function ClassroomPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
 
-  const initRealtime = () => {
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
-
+  useEffect(() => {
     setStatusText('جاري الاتصال بالمزامنة...');
 
-    const channel = supabase.channel('classroom-room-live', {
-      config: {
-        broadcast: { self: true }
-      }
-    });
+    const channel = supabase
+      .channel('classroom-db-sync')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'classroom_events' },
+        (payload) => {
+          const newEvent = payload.new;
+          if (!newEvent) return;
 
-    channel
-      .on('broadcast', { event: 'draw' }, ({ payload }) => {
-        drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
-      })
-      .on('broadcast', { event: 'clear' }, () => {
-        clearLocalCanvas();
-      })
-      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
-        if (payload.raised) {
-          setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
-        } else {
-          setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+          if (newEvent.event_type === 'draw') {
+            const data = newEvent.payload;
+            drawOnCanvas(data.prevX, data.prevY, data.currX, data.currY, data.color);
+          } else if (newEvent.event_type === 'clear') {
+            clearLocalCanvas();
+          } else if (newEvent.event_type === 'raise-hand') {
+            const data = newEvent.payload;
+            if (data.raised) {
+              setRaisedHandsList((prev) => Array.from(new Set([...prev, data.studentName])));
+            } else {
+              setRaisedHandsList((prev) => prev.filter((name) => name !== data.studentName));
+            }
+          } else if (newEvent.event_type === 'chat') {
+            setMessages((prev) => [...prev, newEvent.payload]);
+          }
         }
-      })
-      .on('broadcast', { event: 'chat' }, ({ payload }) => {
-        setMessages((prev) => [...prev, payload]);
-      })
-      .subscribe((status, err) => {
-        console.log('Realtime Status:', status, err);
+      )
+      .subscribe((status) => {
+        console.log('Status:', status);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
@@ -66,17 +64,21 @@ export default function ClassroomPage() {
         }
       });
 
-    channelRef.current = channel;
-  };
-
-  useEffect(() => {
-    initRealtime();
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
+      supabase.removeChannel(channel);
     };
   }, []);
+
+  const sendEvent = async (eventType: string, payloadData: any) => {
+    try {
+      await supabase.from('classroom_events').insert({
+        event_type: eventType,
+        payload: payloadData
+      });
+    } catch (err) {
+      console.error('Error sending event:', err);
+    }
+  };
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -120,14 +122,7 @@ export default function ClassroomPage() {
     const prevY = prevCoords.current.y;
 
     drawOnCanvas(prevX, prevY, coords.x, coords.y, penColor);
-
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'draw',
-        payload: { prevX, prevY, currX: coords.x, currY: coords.y, color: penColor }
-      });
-    }
+    sendEvent('draw', { prevX, prevY, currX: coords.x, currY: coords.y, color: penColor });
 
     prevCoords.current = coords;
   };
@@ -147,43 +142,23 @@ export default function ClassroomPage() {
   const handleClearBoard = () => {
     if (role !== 'teacher') return;
     clearLocalCanvas();
-    if (channelRef.current) {
-      channelRef.current.send({ type: 'broadcast', event: 'clear', payload: {} });
-    }
+    sendEvent('clear', {});
   };
 
   const toggleRaiseHand = () => {
     const newStatus = !handRaised;
     setHandRaised(newStatus);
+    sendEvent('raise-hand', { studentName: userName, raised: newStatus });
 
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'raise-hand',
-        payload: { studentName: userName, raised: newStatus }
-      });
-
-      if (newStatus) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'chat',
-          payload: { sender: 'النظام 🔔', content: `قام الطالب (${userName}) برفع اليد للاستئذان ✋` }
-        });
-      }
+    if (newStatus) {
+      sendEvent('chat', { sender: 'النظام 🔔', content: `قام الطالب (${userName}) برفع اليد للاستئذان ✋` });
     }
   };
 
   const sendMessage = () => {
     if (!input.trim()) return;
     const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
-    
-    if (channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'chat',
-        payload: msgData
-      });
-    }
+    sendEvent('chat', msgData);
     setInput('');
   };
 
@@ -196,11 +171,6 @@ export default function ClassroomPage() {
             <span className={`px-2 py-0.5 rounded text-[10px] ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
               {statusText}
             </span>
-            {!isConnected && (
-              <button onClick={() => initRealtime()} className="text-[10px] bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 px-2 py-0.5 rounded border border-indigo-500/30">
-                إعادة الاتصال 🔄
-              </button>
-            )}
           </div>
           <p className="text-xs text-slate-400">إدارة الدور، التحكم بالسبورة، ورفع اليد في الوقت الفعلي</p>
         </div>
