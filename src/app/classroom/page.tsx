@@ -3,11 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// قيم صريحة ومباشرة
 const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...ضع_مفتاحك_الحقيقي_هنا';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ضع المفتاح الحقيقي المنسوخ من Supabase (الذي يبدأ بـ eyJ...)
+const SUPABASE_ANON_KEY = 'ضع_مفتاح_ANON_KEY_الحقيقي_هنا';
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
@@ -20,15 +18,28 @@ export default function ClassroomPage() {
   const [statusText, setStatusText] = useState('جاري الاتصال...');
   const [isConnected, setIsConnected] = useState(false);
   
+  const supabaseRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    setStatusText('جاري الاتصال بالمزامنة...');
+    setStatusText('جاري فتح قناة المزامنة...');
 
-    const channel = supabase
-      .channel('classroom-db-sync')
+    // إنشاء عميل خاص بالنطاق الحقيقي
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
+      },
+    });
+    supabaseRef.current = client;
+
+    const channelName = `room-${Math.random().toString(36).substring(7)}`;
+    const channel = client.channel(channelName);
+
+    channel
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'classroom_events' },
@@ -53,11 +64,14 @@ export default function ClassroomPage() {
           }
         }
       )
-      .subscribe((status) => {
-        console.log('Status:', status);
+      .subscribe((status, err) => {
+        console.log('Realtime Status:', status, err);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('خطأ الاتصال بالقناة (حاول تحديث الصفحة)');
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -65,13 +79,14 @@ export default function ClassroomPage() {
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      client.removeChannel(channel);
     };
   }, []);
 
   const sendEvent = async (eventType: string, payloadData: any) => {
+    if (!supabaseRef.current) return;
     try {
-      await supabase.from('classroom_events').insert({
+      await supabaseRef.current.from('classroom_events').insert({
         event_type: eventType,
         payload: payloadData
       });
