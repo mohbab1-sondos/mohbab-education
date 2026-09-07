@@ -1,22 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-// إنشاء العميل مرة واحدة خارج المكون لتجنب Re-creation المكرر
-let supabase: SupabaseClient | null = null;
-if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    realtime: {
-      params: {
-        eventsPerSecond: 10,
-      },
-    },
-  });
-}
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
@@ -35,23 +23,21 @@ export default function ClassroomPage() {
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const initRealtime = () => {
-    if (!supabase) {
-      setStatusText('خطأ: متغيرات البيئة مفقودة');
+    if (!supabaseUrl || !supabaseAnonKey) {
+      setStatusText('خطأ: NEXT_PUBLIC_SUPABASE_ANON_KEY غير معرف في Vercel');
       return;
-    }
-
-    // تنظيف القناة القديمة إن وجدت قبل فتح قناة جديدة
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
     }
 
     setStatusText('جاري الاتصال...');
 
-    const channel = supabase.channel('room-classroom-main', {
-      config: {
-        broadcast: { ack: false, self: true },
-      },
-    });
+    // إنشاء Supabase Client بمفاتيح صريحة
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    const channel = supabase.channel('room-classroom-v1');
 
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
@@ -71,16 +57,16 @@ export default function ClassroomPage() {
         setMessages((prev) => [...prev, payload]);
       })
       .subscribe((status, err) => {
-        console.log('Realtime Status:', status, err);
+        console.log('Realtime Connection Status:', status, err);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('خطأ مفتاح الاتصال - تحقق من Vercel Env Vars');
         } else if (status === 'CLOSED') {
           setIsConnected(false);
           setStatusText('مغلق - اضغط إعادة الاتصال');
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setStatusText('خطأ في الاتصال (تحقق من إعدادات Supabase)');
         }
       });
 
@@ -89,12 +75,6 @@ export default function ClassroomPage() {
 
   useEffect(() => {
     initRealtime();
-
-    return () => {
-      if (channelRef.current && supabase) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
   }, []);
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -140,7 +120,7 @@ export default function ClassroomPage() {
 
     drawOnCanvas(prevX, prevY, coords.x, coords.y, penColor);
 
-    if (channelRef.current && isConnected) {
+    if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'draw',
@@ -166,7 +146,7 @@ export default function ClassroomPage() {
   const handleClearBoard = () => {
     if (role !== 'teacher') return;
     clearLocalCanvas();
-    if (channelRef.current && isConnected) {
+    if (channelRef.current) {
       channelRef.current.send({ type: 'broadcast', event: 'clear', payload: {} });
     }
   };
@@ -175,7 +155,7 @@ export default function ClassroomPage() {
     const newStatus = !handRaised;
     setHandRaised(newStatus);
 
-    if (channelRef.current && isConnected) {
+    if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'raise-hand',
@@ -196,7 +176,7 @@ export default function ClassroomPage() {
     if (!input.trim()) return;
     const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
     
-    if (channelRef.current && isConnected) {
+    if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'chat',
