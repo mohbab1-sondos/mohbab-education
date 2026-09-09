@@ -12,10 +12,8 @@ export default async function LiveLessonPage({ params }: PageProps) {
   const lessonId = resolvedParams.id;
 
   return (
-    <main className="min-h-screen bg-slate-950 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <LiveClassroomRoom lessonId={lessonId} />
-      </div>
-    </main>
+    <div className="min-h-screen bg-slate-950 p-4 md:p-8 text-slate-100">
+      <LiveClassroomRoom lessonId={lessonId} />
+    </div>
   );
 }
