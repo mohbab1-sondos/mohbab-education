@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 // ضع المفتاح الحقيقي المنسوخ من Supabase (الذي يبدأ بـ eyJ...)
-const SUPABASE_ANON_KEY = 'ضع_مفتاح_ANON_KEY_الحقيقي_هنا';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
 
 export default function ClassroomPage() {
   const [role, setRole] = useState<'teacher' | 'student'>('student');
