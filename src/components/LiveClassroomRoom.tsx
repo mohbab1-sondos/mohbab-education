@@ -26,13 +26,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const [statusText, setStatusText] = useState('جاري الاتصال...');
   const [isConnected, setIsConnected] = useState(false);
 
-  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  const supabaseRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const client: any = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       realtime: { params: { eventsPerSecond: 10 } },
     });
     supabaseRef.current = client;
@@ -89,10 +89,10 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const sendEvent = async (eventType: string, payloadData: Record<string, any>) => {
     if (!supabaseRef.current) return;
     try {
-      await supabaseRef.current.from('classroom_events').insert({
+      await supabaseRef.current.from('classroom_events').insert([{
         event_type: eventType,
         payload: { ...payloadData, lessonId }
-      });
+      }] as any);
     } catch (err) {
       console.error('Error sending event:', err);
     }
