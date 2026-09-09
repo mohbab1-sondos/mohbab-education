@@ -26,51 +26,40 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const [statusText, setStatusText] = useState('جاري الاتصال...');
   const [isConnected, setIsConnected] = useState(false);
 
-  const supabaseRef = useRef<any>(null);
+  const channelRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    const client: any = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: { params: { eventsPerSecond: 10 } },
-    });
-    supabaseRef.current = client;
-
-    const channelName = `lesson-room-${lessonId}`;
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const channelName = `room-${lessonId}`;
     const channel = client.channel(channelName);
 
     channel
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'classroom_events' },
-        (payload: { new: any }) => {
-          const newEvent = payload.new;
-          if (!newEvent) return;
-
-          if (newEvent.event_type === 'draw') {
-            const data = newEvent.payload;
-            drawOnCanvas(data.prevX, data.prevY, data.currX, data.currY, data.color);
-          } else if (newEvent.event_type === 'clear') {
-            clearLocalCanvas();
-          } else if (newEvent.event_type === 'raise-hand') {
-            const data = newEvent.payload;
-            if (data.raised) {
-              setRaisedHandsList((prev) => Array.from(new Set([...prev, data.studentName])));
-            } else {
-              setRaisedHandsList((prev) => prev.filter((name) => name !== data.studentName));
-            }
-          } else if (newEvent.event_type === 'lower-hand-single') {
-            const data = newEvent.payload;
-            setRaisedHandsList((prev) => prev.filter((name) => name !== data.studentName));
-          } else if (newEvent.event_type === 'clear-hands') {
-            setRaisedHandsList([]);
-            setHandRaised(false);
-          } else if (newEvent.event_type === 'chat') {
-            setMessages((prev) => [...prev, newEvent.payload]);
-          }
+      .on('broadcast', { event: 'draw' }, ({ payload }) => {
+        drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
+      })
+      .on('broadcast', { event: 'clear' }, () => {
+        clearLocalCanvas();
+      })
+      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
+        if (payload.raised) {
+          setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
+        } else {
+          setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         }
-      )
+      })
+      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
+        setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+      })
+      .on('broadcast', { event: 'clear-hands' }, () => {
+        setRaisedHandsList([]);
+        setHandRaised(false);
+      })
+      .on('broadcast', { event: 'chat' }, ({ payload }) => {
+        setMessages((prev) => [...prev, payload]);
+      })
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
@@ -81,20 +70,20 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
       client.removeChannel(channel);
     };
   }, [lessonId]);
 
-  const sendEvent = async (eventType: string, payloadData: Record<string, any>) => {
-    if (!supabaseRef.current) return;
-    try {
-      await supabaseRef.current.from('classroom_events').insert([{
-        event_type: eventType,
-        payload: { ...payloadData, lessonId }
-      }] as any);
-    } catch (err) {
-      console.error('Error sending event:', err);
+  const sendBroadcast = (eventName: string, payload: Record<string, any>) => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: eventName,
+        payload,
+      });
     }
   };
 
@@ -134,7 +123,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
 
     const coords = getCanvasCoordinates(e);
     drawOnCanvas(prevCoords.current.x, prevCoords.current.y, coords.x, coords.y, penColor);
-    sendEvent('draw', { prevX: prevCoords.current.x, prevY: prevCoords.current.y, currX: coords.x, currY: coords.y, color: penColor });
+    sendBroadcast('draw', { prevX: prevCoords.current.x, prevY: prevCoords.current.y, currX: coords.x, currY: coords.y, color: penColor });
 
     prevCoords.current = coords;
   };
@@ -154,31 +143,40 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const handleClearBoard = () => {
     if (role !== 'teacher') return;
     clearLocalCanvas();
-    sendEvent('clear', {});
+    sendBroadcast('clear', {});
   };
 
   const handleLowerSingleHand = (studentName: string) => {
     if (role !== 'teacher') return;
     setRaisedHandsList((prev) => prev.filter((name) => name !== studentName));
-    sendEvent('lower-hand-single', { studentName });
+    sendBroadcast('lower-hand-single', { studentName });
   };
 
   const handleClearAllHands = () => {
     if (role !== 'teacher') return;
     setRaisedHandsList([]);
-    sendEvent('clear-hands', {});
+    sendBroadcast('clear-hands', {});
   };
 
   const toggleRaiseHand = () => {
     if (role === 'teacher') return;
     const newStatus = !handRaised;
     setHandRaised(newStatus);
-    sendEvent('raise-hand', { studentName: userName, raised: newStatus });
+
+    if (newStatus) {
+      setRaisedHandsList((prev) => Array.from(new Set([...prev, userName])));
+    } else {
+      setRaisedHandsList((prev) => prev.filter((name) => name !== userName));
+    }
+
+    sendBroadcast('raise-hand', { studentName: userName, raised: newStatus });
   };
 
   const sendMessage = () => {
     if (!input.trim()) return;
-    sendEvent('chat', { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input });
+    const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
+    setMessages((prev) => [...prev, msgData]);
+    sendBroadcast('chat', msgData);
     setInput('');
   };
 
@@ -192,7 +190,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           </span>
         </div>
 
-        {/* زر التبديل بين المعلم والطالب */}
         <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
           <button
             type="button"
@@ -210,14 +207,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           </button>
         </div>
 
-        {/* أدوات التحكم */}
         <div className="flex items-center gap-3">
           <input
             type="text"
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
             className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 w-28"
-            placeholder="اسم المستجيب"
+            placeholder="اسمك"
           />
 
           {role === 'teacher' ? (
@@ -258,7 +254,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط قائمة المستأذنين */}
+      {/* شريط الأيدي المرفوعة */}
       {raisedHandsList.length > 0 && (
         <div className="bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl flex items-center gap-2 flex-wrap">
           <span className="text-amber-200 text-xs font-bold flex items-center gap-1">✋ المستأذنون حالياً:</span>
@@ -280,7 +276,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       )}
 
-      {/* منطقة السبورة والمحادثة */}
+      {/* السبورة والمحادثة */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-slate-950 p-2 rounded-xl border border-slate-800 relative">
           <canvas
@@ -295,7 +291,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           />
         </div>
 
-        {/* المحادثة */}
         <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-800 flex flex-col justify-between h-[418px]">
           <div className="flex-1 overflow-y-auto space-y-2 mb-3 pl-1">
             {messages.length === 0 ? (
