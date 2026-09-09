@@ -34,7 +34,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   useEffect(() => {
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const channelName = `room-${lessonId}`;
-    const channel = client.channel(channelName);
+    
+    // إعداد القناة مع تفعيل broadcast المتبادل لتفادي CHANNEL_ERROR
+    const channel = client.channel(channelName, {
+      config: {
+        broadcast: { self: true, ack: false },
+      },
+    });
 
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
@@ -146,6 +152,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
     sendBroadcast('clear', {});
   };
 
+  // خفض اليد فردياً مع التحديث المحلي الفوري
   const handleLowerSingleHand = (studentName: string) => {
     if (role !== 'teacher') return;
     setRaisedHandsList((prev) => prev.filter((name) => name !== studentName));
@@ -175,7 +182,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const sendMessage = () => {
     if (!input.trim()) return;
     const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
-    setMessages((prev) => [...prev, msgData]);
     sendBroadcast('chat', msgData);
     setInput('');
   };
@@ -195,14 +201,14 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           <button
             type="button"
             onClick={() => { setRole('teacher'); setUserName('المعلم'); }}
-            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'teacher' ? '#4f46e5' : 'transparent', color: role === 'teacher' ? '#ffffff' : '#94a3b8', transition: 'all 0.2s' }}
+            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'teacher' ? '#4f46e5' : 'transparent', color: role === 'teacher' ? '#ffffff' : '#94a3b8' }}
           >
             👨‍🏫 وضع المعلم
           </button>
           <button
             type="button"
             onClick={() => { setRole('student'); setUserName('طالب'); }}
-            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'student' ? '#4f46e5' : 'transparent', color: role === 'student' ? '#ffffff' : '#94a3b8', transition: 'all 0.2s' }}
+            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'student' ? '#4f46e5' : 'transparent', color: role === 'student' ? '#ffffff' : '#94a3b8' }}
           >
             👨‍🎓 وضع الطالب
           </button>
@@ -214,7 +220,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
             style={{ backgroundColor: '#1e293b', border: '1px solid #334155', color: '#ffffff', fontSize: '13px', borderRadius: '8px', padding: '8px 12px', textAlign: 'center', width: '120px' }}
-            placeholder="اسم المستجيب"
+            placeholder="اسمك"
           />
 
           {role === 'teacher' ? (
@@ -255,18 +261,18 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط قائمة المستأذنين */}
+      {/* شريط الأيدي المرفوعة مع زر إزالة اليد واضح باللون الأحمر */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
           {raisedHandsList.map((student) => (
-            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.8)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.8)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               {student}
               {role === 'teacher' && (
                 <button
                   type="button"
                   onClick={() => handleLowerSingleHand(student)}
-                  style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '50%', width: '18px', height: '18px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyConent: 'center', lineHeight: '1' }}
+                  style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                   title="تنزيل اليد"
                 >
                   ✕
@@ -295,7 +301,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         <div style={{ backgroundColor: 'rgba(30, 41, 59, 0.5)', padding: '12px', borderRadius: '12px', border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '416px' }}>
           <div style={{ flex: 1, overflowY: 'auto', marginBottom: '12px', paddingLeft: '4px' }}>
             {messages.length === 0 ? (
-              <div style={{ height: '100%', display: 'flex', itemsCenter: 'center', justifyContent: 'center', color: '#64748b', fontSize: '12px' }}>لا توجد رسائل بعد...</div>
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '12px' }}>لا توجد رسائل بعد...</div>
             ) : (
               messages.map((msg, idx) => (
                 <div key={idx} style={{ backgroundColor: '#1e293b', padding: '10px', borderRadius: '8px', border: '1px solid #334155', marginBottom: '8px' }}>
