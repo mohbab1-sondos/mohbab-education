@@ -1,5 +1,5 @@
 import React from 'react';
-import LiveClassroomRoom from '../../components/LiveClassroomRoom';
+import LiveClassroomRoom from '../../../components/LiveClassroomRoom';
 
 interface PageProps {
   params: Promise<{
