@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEyMzQ1NjcsImV4cCI6MjA1NjgxMDU2N30.X_PLACEHOLDER_KEY_HERE';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -32,6 +32,11 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
+    if (!SUPABASE_ANON_KEY) {
+      setStatusText('خطأ: يرجى إدخال SUPABASE_ANON_KEY الصحيح');
+      return;
+    }
+
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const channelName = `room-${lessonId}`;
 
@@ -41,41 +46,34 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
       },
     });
 
-    const handlePayload = (eventName: string, payload: any) => {
-      if (eventName === 'draw') {
+    channel
+      .on('broadcast', { event: 'draw' }, ({ payload }) => {
         drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
-      } else if (eventName === 'clear') {
+      })
+      .on('broadcast', { event: 'clear' }, () => {
         clearLocalCanvas();
-      } else if (eventName === 'raise-hand') {
+      })
+      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
         if (payload.raised) {
           setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
         } else {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         }
-      } else if (eventName === 'lower-hand-single') {
+      })
+      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
         setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
-      } else if (eventName === 'clear-hands') {
+      })
+      .on('broadcast', { event: 'clear-hands' }, () => {
         setRaisedHandsList([]);
         setHandRaised(false);
-      } else if (eventName === 'chat') {
+      })
+      .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
-      }
-    };
-
-    channel
-      .on('broadcast', { event: 'draw' }, ({ payload }) => handlePayload('draw', payload))
-      .on('broadcast', { event: 'clear' }, ({ payload }) => handlePayload('clear', payload))
-      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => handlePayload('raise-hand', payload))
-      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => handlePayload('lower-hand-single', payload))
-      .on('broadcast', { event: 'clear-hands' }, ({ payload }) => handlePayload('clear-hands', payload))
-      .on('broadcast', { event: 'chat' }, ({ payload }) => handlePayload('chat', payload))
+      })
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setStatusText('جاري إعادة المحاولة بالنمط الاحتياطي...');
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -267,7 +265,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة مع زر إزالة اليد الأحادي (✕) */}
+      {/* شريط الأيدي المرفوعة مع زر إزالة اليد */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
