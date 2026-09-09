@@ -183,54 +183,95 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   };
 
   return (
-    <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '15px', borderRadius: '10px', fontFamily: 'sans-serif' }} dir="rtl">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
-        <div>
-          <span style={{ fontSize: '12px', color: isConnected ? '#4ade80' : '#f59e0b', padding: '3px 8px', border: '1px solid currentColor', borderRadius: '4px' }}>
+    <div className="bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-800 space-y-4 max-w-7xl mx-auto" dir="rtl">
+      {/* الشريط العلوي */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${isConnected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
             {statusText}
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button type="button" onClick={() => { setRole('teacher'); setUserName('المعلم'); }} style={{ padding: '6px 12px', backgroundColor: role === 'teacher' ? '#4f46e5' : '#334155', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+        {/* زر التبديل بين المعلم والطالب */}
+        <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+          <button
+            type="button"
+            onClick={() => { setRole('teacher'); setUserName('المعلم'); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${role === 'teacher' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
             👨‍🏫 وضع المعلم
           </button>
-          <button type="button" onClick={() => { setRole('student'); setUserName('طالب'); }} style={{ padding: '6px 12px', backgroundColor: role === 'student' ? '#4f46e5' : '#334155', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button
+            type="button"
+            onClick={() => { setRole('student'); setUserName('طالب'); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${role === 'student' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
             👨‍🎓 وضع الطالب
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} style={{ padding: '5px', borderRadius: '4px', border: '1px solid #475569', backgroundColor: '#1e293b', color: '#fff', textAlign: 'center' }} />
+        {/* أدوات التحكم */}
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={userName}
+            onChange={(e) => setUserName(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 w-28"
+            placeholder="اسم المستجيب"
+          />
 
           {role === 'teacher' ? (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <input type="color" value={penColor} onChange={(e) => setPenColor(e.target.value)} style={{ cursor: 'pointer', height: '30px', width: '30px', border: 'none', background: 'none' }} title="لون القلم" />
-              <button type="button" onClick={handleClearBoard} style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={penColor}
+                onChange={(e) => setPenColor(e.target.value)}
+                className="w-8 h-8 rounded-lg border-0 cursor-pointer bg-transparent"
+                title="لون القلم"
+              />
+              <button
+                type="button"
+                onClick={handleClearBoard}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium shadow"
+              >
                 مسح السبورة
               </button>
               {raisedHandsList.length > 0 && (
-                <button type="button" onClick={handleClearAllHands} style={{ padding: '6px 12px', backgroundColor: '#d97706', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                <button
+                  type="button"
+                  onClick={handleClearAllHands}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium shadow"
+                >
                   تصفير الكل ✋
                 </button>
               )}
             </div>
           ) : (
-            <button type="button" onClick={toggleRaiseHand} style={{ padding: '6px 12px', backgroundColor: handRaised ? '#d97706' : '#334155', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            <button
+              type="button"
+              onClick={toggleRaiseHand}
+              className={`text-xs px-4 py-1.5 rounded-lg transition-colors font-medium shadow ${handRaised ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'}`}
+            >
               {handRaised ? '✋ اليد مرفوعة' : '✋ رفع اليد'}
             </button>
           )}
         </div>
       </div>
 
+      {/* شريط قائمة المستأذنين */}
       {raisedHandsList.length > 0 && (
-        <div style={{ backgroundColor: '#78350f', border: '1px solid #f59e0b', padding: '8px 12px', borderRadius: '6px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <strong style={{ color: '#fef3c7', fontSize: '13px' }}>✋ المستأذنون حالياً:</strong>
+        <div className="bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl flex items-center gap-2 flex-wrap">
+          <span className="text-amber-200 text-xs font-bold flex items-center gap-1">✋ المستأذنون حالياً:</span>
           {raisedHandsList.map((student) => (
-            <span key={student} style={{ backgroundColor: '#92400e', color: '#fff', padding: '3px 8px', borderRadius: '15px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span key={student} className="bg-amber-900/60 text-amber-200 border border-amber-500/30 px-2.5 py-1 rounded-full text-xs flex items-center gap-2">
               {student}
               {role === 'teacher' && (
-                <button type="button" onClick={() => handleLowerSingleHand(student)} title="خفض يد الطالب" style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', cursor: 'pointer', display: 'inline-flex', justifyContent: 'center', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => handleLowerSingleHand(student)}
+                  className="bg-rose-500 hover:bg-rose-600 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center transition-colors"
+                  title="تنزيل اليد"
+                >
                   ✕
                 </button>
               )}
@@ -239,23 +280,51 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '15px' }}>
-        <div style={{ backgroundColor: '#020617', padding: '5px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-          <canvas ref={canvasRef} width={1280} height={720} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} style={{ width: '100%', height: '360px', backgroundColor: '#0f172a', borderRadius: '6px', cursor: role === 'teacher' ? 'crosshair' : 'default' }} />
+      {/* منطقة السبورة والمحادثة */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 bg-slate-950 p-2 rounded-xl border border-slate-800 relative">
+          <canvas
+            ref={canvasRef}
+            width={1280}
+            height={720}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            className={`w-full h-[400px] bg-slate-950 rounded-lg ${role === 'teacher' ? 'cursor-crosshair' : 'cursor-default'}`}
+          />
         </div>
 
-        <div style={{ backgroundColor: '#1e293b', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '370px' }}>
-          <div style={{ flex: 1, overflowY: 'auto', marginBottom: '10px', backgroundColor: '#0f172a', padding: '8px', borderRadius: '6px' }}>
-            {messages.map((msg, idx) => (
-              <div key={idx} style={{ marginBottom: '6px', padding: '5px', backgroundColor: '#1e293b', borderRadius: '4px', fontSize: '12px' }}>
-                <strong style={{ color: '#818cf8', display: 'block' }}>{msg.sender}</strong>
-                <span>{msg.content}</span>
-              </div>
-            ))}
+        {/* المحادثة */}
+        <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-800 flex flex-col justify-between h-[418px]">
+          <div className="flex-1 overflow-y-auto space-y-2 mb-3 pl-1">
+            {messages.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-500 text-xs">لا توجد رسائل بعد...</div>
+            ) : (
+              messages.map((msg, idx) => (
+                <div key={idx} className="bg-slate-800 p-2.5 rounded-lg border border-slate-700/50">
+                  <span className="text-indigo-400 font-semibold text-xs block mb-0.5">{msg.sender}</span>
+                  <span className="text-slate-200 text-xs">{msg.content}</span>
+                </div>
+              ))
+            )}
           </div>
-          <div style={{ display: 'flex', gap: '5px' }}>
-            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder="اكتب رسالة..." style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid #475569', backgroundColor: '#0f172a', color: '#fff', fontSize: '12px' }} />
-            <button type="button" onClick={sendMessage} style={{ padding: '6px 12px', backgroundColor: '#4f46e5', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>إرسال</button>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+              placeholder="اكتب رسالة..."
+              className="flex-1 bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={sendMessage}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg transition-colors font-medium shadow"
+            >
+              إرسال
+            </button>
           </div>
         </div>
       </div>
