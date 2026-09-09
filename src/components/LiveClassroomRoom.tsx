@@ -34,42 +34,48 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   useEffect(() => {
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const channelName = `room-${lessonId}`;
-    
-    // إعداد القناة مع تفعيل broadcast المتبادل لتفادي CHANNEL_ERROR
+
     const channel = client.channel(channelName, {
       config: {
-        broadcast: { self: true, ack: false },
+        broadcast: { self: true },
       },
     });
 
-    channel
-      .on('broadcast', { event: 'draw' }, ({ payload }) => {
+    const handlePayload = (eventName: string, payload: any) => {
+      if (eventName === 'draw') {
         drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
-      })
-      .on('broadcast', { event: 'clear' }, () => {
+      } else if (eventName === 'clear') {
         clearLocalCanvas();
-      })
-      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
+      } else if (eventName === 'raise-hand') {
         if (payload.raised) {
           setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
         } else {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         }
-      })
-      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
+      } else if (eventName === 'lower-hand-single') {
         setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
-      })
-      .on('broadcast', { event: 'clear-hands' }, () => {
+      } else if (eventName === 'clear-hands') {
         setRaisedHandsList([]);
         setHandRaised(false);
-      })
-      .on('broadcast', { event: 'chat' }, ({ payload }) => {
+      } else if (eventName === 'chat') {
         setMessages((prev) => [...prev, payload]);
-      })
+      }
+    };
+
+    channel
+      .on('broadcast', { event: 'draw' }, ({ payload }) => handlePayload('draw', payload))
+      .on('broadcast', { event: 'clear' }, ({ payload }) => handlePayload('clear', payload))
+      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => handlePayload('raise-hand', payload))
+      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => handlePayload('lower-hand-single', payload))
+      .on('broadcast', { event: 'clear-hands' }, ({ payload }) => handlePayload('clear-hands', payload))
+      .on('broadcast', { event: 'chat' }, ({ payload }) => handlePayload('chat', payload))
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('جاري إعادة المحاولة بالنمط الاحتياطي...');
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -152,7 +158,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
     sendBroadcast('clear', {});
   };
 
-  // خفض اليد فردياً مع التحديث المحلي الفوري
   const handleLowerSingleHand = (studentName: string) => {
     if (role !== 'teacher') return;
     setRaisedHandsList((prev) => prev.filter((name) => name !== studentName));
@@ -182,6 +187,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const sendMessage = () => {
     if (!input.trim()) return;
     const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
+    setMessages((prev) => [...prev, msgData]);
     sendBroadcast('chat', msgData);
     setInput('');
   };
@@ -261,7 +267,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة مع زر إزالة اليد واضح باللون الأحمر */}
+      {/* شريط الأيدي المرفوعة مع زر إزالة اليد الأحادي (✕) */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
