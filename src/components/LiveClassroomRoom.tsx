@@ -33,19 +33,27 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
 
   useEffect(() => {
     if (!SUPABASE_ANON_KEY) {
-      setStatusText('خطأ: يرجى إدخال SUPABASE_ANON_KEY الصحيح');
+      setStatusText('خطأ: يرجى إدخال SUPABASE_ANON_KEY في بيئة العمل');
       return;
     }
 
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const channelName = `room-${lessonId}`;
-
-    const channel = client.channel(channelName, {
-      config: {
-        broadcast: { self: true },
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
       },
     });
 
+    // 1. إنشاء قناة فريدة تشمل Broadcast و Postgres Changes معاً
+    const channel = client.channel(`room_${lessonId}`, {
+      config: {
+        broadcast: { self: true },
+        presence: { key: userName },
+      },
+    });
+
+    // 2. الاستماع لأحداث البث المباشر (Broadcast Events)
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
         drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
@@ -70,10 +78,27 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
       })
-      .subscribe((status: string) => {
+      // 3. الاستماع لتغييرات قاعدة البيانات صراحة (Database Changes)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'classroom_events',
+          filter: `lesson_id=eq.${lessonId}`,
+        },
+        (payload) => {
+          console.log('Database Change Received:', payload);
+        }
+      )
+      .subscribe((status: string, err: any) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setStatusText('فشل الاتصال بالقناة (تأكد من إعدادات Supabase)');
+          console.error('Realtime Channel Error:', err);
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -103,7 +128,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
     const rect = canvas.getBoundingClientRect();
     return {
       x: (e.clientX - rect.left) * (canvas.width / rect.width),
-      y: (e.clientY - rect.top) * (canvas.height / rect.height)
+      y: (e.clientY - rect.top) * (canvas.height / rect.height),
     };
   };
 
@@ -265,7 +290,7 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة مع زر إزالة اليد */}
+      {/* شريط الأيدي المرفوعة */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
