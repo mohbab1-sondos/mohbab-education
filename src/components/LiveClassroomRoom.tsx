@@ -6,6 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// إنشاء العميل مرة واحدة خارج المكون لتجنب تكرار الاتصالات
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 interface LiveClassroomRoomProps {
   lessonId: string;
   initialRole?: 'teacher' | 'student';
@@ -52,11 +55,9 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
       return;
     }
 
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const channel = client.channel(`room_${lessonId}`, {
+    const channel = supabase.channel(`room_${lessonId}`, {
       config: {
         broadcast: { self: true },
-        presence: { key: userName },
       },
     });
 
@@ -96,7 +97,10 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
           setStatusText('متصل بالمزامنة المباشرة ●');
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
-          setStatusText('فشل الاتصال بالقناة');
+          setStatusText('فشل الاتصال بالقناة (خطأ في السيرفر)');
+        } else if (status === 'TIMED_OUT') {
+          setIsConnected(false);
+          setStatusText('انتهت مهلة الاتصال');
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -106,7 +110,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
     channelRef.current = channel;
 
     return () => {
-      client.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, [lessonId]);
 
@@ -270,7 +274,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة متاح دائماً وبجانب كل طالب زر ✕ أحمر واضح جداً */}
+      {/* شريط الأيدي المرفوعة متاح دائماً وبجانبه زر X أحمر */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
