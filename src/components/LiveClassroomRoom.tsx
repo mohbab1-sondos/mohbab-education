@@ -6,8 +6,13 @@ import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
 
-// إنشاء العميل ليكون ثابتاً خارج المكون
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: {
+    params: {
+      eventsPerSecond: 20,
+    },
+  },
+});
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -50,24 +55,17 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
   }, [initialRole]);
 
   useEffect(() => {
-    let activeChannel: RealtimeChannel | null = null;
+    let channel: RealtimeChannel;
 
-    const setupChannel = async () => {
-      // إزالة أي قناة سابقة مفتوحة بنفس الاسم لمنع CHANNEL_ERROR
-      const existingChannels = supabase.getChannels();
-      for (const ch of existingChannels) {
-        if (ch.topic === `realtime:room_${lessonId}`) {
-          await supabase.removeChannel(ch);
-        }
-      }
-
-      activeChannel = supabase.channel(`room_${lessonId}`, {
+    const connectRealtime = () => {
+      // استخدام اسم القناة المعرف
+      channel = supabase.channel(`room_${lessonId}`, {
         config: {
           broadcast: { self: true, ack: false },
         },
       });
 
-      activeChannel
+      channel
         .on('broadcast', { event: 'draw' }, ({ payload }) => {
           drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
         })
@@ -85,7 +83,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
           }
         })
         .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
-          setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+          setRaisedHandsList((prev) => prev.filter((name) => name !== studentNameFromPayload(payload)));
           if (payload.studentName === userNameRef.current) {
             setHandRaised(false);
           }
@@ -97,13 +95,14 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         .on('broadcast', { event: 'chat' }, ({ payload }) => {
           setMessages((prev) => [...prev, payload]);
         })
-        .subscribe((status: string) => {
+        .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') {
             setIsConnected(true);
             setStatusText('متصل بالمزامنة المباشرة ●');
           } else if (status === 'CHANNEL_ERROR') {
             setIsConnected(false);
-            setStatusText('تعذر الاتصال بقناة Supabase (جاري إعادة المحاولة...)');
+            setStatusText('فشل الاتصال: يرجى التأكد من تفعيل Broadcast في Supabase');
+            console.error('Supabase Channel Error details:', err);
           } else if (status === 'TIMED_OUT') {
             setIsConnected(false);
             setStatusText('انتهت مهلة الاتصال بالشبكة');
@@ -113,20 +112,22 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
           }
         });
 
-      channelRef.current = activeChannel;
+      channelRef.current = channel;
     };
 
-    setupChannel();
+    connectRealtime();
 
     return () => {
-      if (activeChannel) {
-        supabase.removeChannel(activeChannel);
+      if (channel) {
+        supabase.removeChannel(channel);
       }
     };
   }, [lessonId]);
 
+  const studentNameFromPayload = (payload: any) => payload?.studentName || '';
+
   const sendBroadcast = (eventName: string, payload: Record<string, any>) => {
-    if (channelRef.current && isConnected) {
+    if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: eventName,
@@ -233,7 +234,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
       {/* الشريط العلوي */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '15px', paddingBottom: '15px', borderBottom: '1px solid #1e293b', marginBottom: '20px' }}>
         <div>
-          <span style={{ fontSize: '13px', color: isConnected ? '#4ade80' : '#f59e0b', backgroundColor: isConnected ? 'rgba(74, 222, 128, 0.1)' : 'rgba(245, 158, 11, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid currentColor', fontWeight: 'bold' }}>
+          <span style={{ fontSize: '13px', color: isConnected ? '#4ade80' : '#ef4444', backgroundColor: isConnected ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid currentColor', fontWeight: 'bold' }}>
             {statusText}
           </span>
         </div>
