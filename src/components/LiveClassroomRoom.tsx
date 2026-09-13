@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
 
-// إنشاء العميل مرة واحدة خارج المكون لتجنب تكرار الاتصالات
+// إنشاء العميل ليكون ثابتاً خارج المكون
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface LiveClassroomRoomProps {
@@ -30,7 +30,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
   const [statusText, setStatusText] = useState('جاري الاتصال...');
   const [isConnected, setIsConnected] = useState(false);
 
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
@@ -50,68 +50,83 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
   }, [initialRole]);
 
   useEffect(() => {
-    const channel = supabase.channel(`room_${lessonId}`, {
-      config: {
-        broadcast: { self: true, ack: false },
-      },
-    });
+    let activeChannel: RealtimeChannel | null = null;
 
-    channel
-      .on('broadcast', { event: 'draw' }, ({ payload }) => {
-        drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
-      })
-      .on('broadcast', { event: 'clear' }, () => {
-        clearLocalCanvas();
-      })
-      .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
-        if (payload.raised) {
-          setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
-        } else {
+    const setupChannel = async () => {
+      // إزالة أي قناة سابقة مفتوحة بنفس الاسم لمنع CHANNEL_ERROR
+      const existingChannels = supabase.getChannels();
+      for (const ch of existingChannels) {
+        if (ch.topic === `realtime:room_${lessonId}`) {
+          await supabase.removeChannel(ch);
+        }
+      }
+
+      activeChannel = supabase.channel(`room_${lessonId}`, {
+        config: {
+          broadcast: { self: true, ack: false },
+        },
+      });
+
+      activeChannel
+        .on('broadcast', { event: 'draw' }, ({ payload }) => {
+          drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
+        })
+        .on('broadcast', { event: 'clear' }, () => {
+          clearLocalCanvas();
+        })
+        .on('broadcast', { event: 'raise-hand' }, ({ payload }) => {
+          if (payload.raised) {
+            setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
+          } else {
+            setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+            if (payload.studentName === userNameRef.current) {
+              setHandRaised(false);
+            }
+          }
+        })
+        .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
           if (payload.studentName === userNameRef.current) {
             setHandRaised(false);
           }
-        }
-      })
-      .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
-        setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
-        if (payload.studentName === userNameRef.current) {
+        })
+        .on('broadcast', { event: 'clear-hands' }, () => {
+          setRaisedHandsList([]);
           setHandRaised(false);
-        }
-      })
-      .on('broadcast', { event: 'clear-hands' }, () => {
-        setRaisedHandsList([]);
-        setHandRaised(false);
-      })
-      .on('broadcast', { event: 'chat' }, ({ payload }) => {
-        setMessages((prev) => [...prev, payload]);
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          setStatusText('متصل بالمزامنة المباشرة ●');
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setStatusText('فشل الاتصال - يرجى مراجعة إعدادات Realtime');
-          console.error('Supabase Realtime Error:', err);
-        } else if (status === 'TIMED_OUT') {
-          setIsConnected(false);
-          setStatusText('انتهت مهلة الاتصال بالشبكة');
-        } else {
-          setIsConnected(false);
-          setStatusText(`جاري الاتصال... (${status})`);
-        }
-      });
+        })
+        .on('broadcast', { event: 'chat' }, ({ payload }) => {
+          setMessages((prev) => [...prev, payload]);
+        })
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            setIsConnected(true);
+            setStatusText('متصل بالمزامنة المباشرة ●');
+          } else if (status === 'CHANNEL_ERROR') {
+            setIsConnected(false);
+            setStatusText('تعذر الاتصال بقناة Supabase (جاري إعادة المحاولة...)');
+          } else if (status === 'TIMED_OUT') {
+            setIsConnected(false);
+            setStatusText('انتهت مهلة الاتصال بالشبكة');
+          } else {
+            setIsConnected(false);
+            setStatusText(`جاري الاتصال... (${status})`);
+          }
+        });
 
-    channelRef.current = channel;
+      channelRef.current = activeChannel;
+    };
+
+    setupChannel();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (activeChannel) {
+        supabase.removeChannel(activeChannel);
+      }
     };
   }, [lessonId]);
 
   const sendBroadcast = (eventName: string, payload: Record<string, any>) => {
-    if (channelRef.current) {
+    if (channelRef.current && isConnected) {
       channelRef.current.send({
         type: 'broadcast',
         event: eventName,
