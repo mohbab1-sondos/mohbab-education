@@ -1,287 +1,54 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-// ضع المفتاح الحقيقي المنسوخ من Supabase (الذي يبدأ بـ eyJ...)
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
+import React, { useState } from 'react';
+import LiveClassroomRoom from '@/components/LiveClassroomRoom';
 
 export default function ClassroomPage() {
-  const [role, setRole] = useState<'teacher' | 'student'>('student');
-  const [messages, setMessages] = useState<any[]>([]);
-  const [input, setInput] = useState('');
-  const [userName, setUserName] = useState('طالب');
-  const [penColor, setPenColor] = useState('#6366f1');
-  const [handRaised, setHandRaised] = useState(false);
-  const [raisedHandsList, setRaisedHandsList] = useState<string[]>([]);
-  const [statusText, setStatusText] = useState('جاري الاتصال...');
-  const [isConnected, setIsConnected] = useState(false);
-  
-  const supabaseRef = useRef<any>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const prevCoords = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    setStatusText('جاري فتح قناة المزامنة...');
-
-    // إنشاء عميل خاص بالنطاق الحقيقي
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: {
-        params: {
-          eventsPerSecond: 10,
-        },
-      },
-    });
-    supabaseRef.current = client;
-
-    const channelName = `room-${Math.random().toString(36).substring(7)}`;
-    const channel = client.channel(channelName);
-
-    channel
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'classroom_events' },
-        (payload) => {
-          const newEvent = payload.new;
-          if (!newEvent) return;
-
-          if (newEvent.event_type === 'draw') {
-            const data = newEvent.payload;
-            drawOnCanvas(data.prevX, data.prevY, data.currX, data.currY, data.color);
-          } else if (newEvent.event_type === 'clear') {
-            clearLocalCanvas();
-          } else if (newEvent.event_type === 'raise-hand') {
-            const data = newEvent.payload;
-            if (data.raised) {
-              setRaisedHandsList((prev) => Array.from(new Set([...prev, data.studentName])));
-            } else {
-              setRaisedHandsList((prev) => prev.filter((name) => name !== data.studentName));
-            }
-          } else if (newEvent.event_type === 'chat') {
-            setMessages((prev) => [...prev, newEvent.payload]);
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        console.log('Realtime Status:', status, err);
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          setStatusText('متصل بالمزامنة المباشرة ●');
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setStatusText('خطأ الاتصال بالقناة (حاول تحديث الصفحة)');
-        } else {
-          setIsConnected(false);
-          setStatusText(`حالة الاتصال: ${status}`);
-        }
-      });
-
-    return () => {
-      client.removeChannel(channel);
-    };
-  }, []);
-
-  const sendEvent = async (eventType: string, payloadData: any) => {
-    if (!supabaseRef.current) return;
-    try {
-      await supabaseRef.current.from('classroom_events').insert({
-        event_type: eventType,
-        payload: payloadData
-      });
-    } catch (err) {
-      console.error('Error sending event:', err);
-    }
-  };
-
-  const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
-    };
-  };
-
-  const drawOnCanvas = (prevX: number, prevY: number, currX: number, currY: number, color: string = '#6366f1') => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.beginPath();
-    ctx.moveTo(prevX, prevY);
-    ctx.lineTo(currX, currY);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  };
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (role !== 'teacher') return;
-    const coords = getCanvasCoordinates(e);
-    prevCoords.current = coords;
-    setIsDrawing(true);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (role !== 'teacher' || !isDrawing || !prevCoords.current) return;
-
-    const coords = getCanvasCoordinates(e);
-    const prevX = prevCoords.current.x;
-    const prevY = prevCoords.current.y;
-
-    drawOnCanvas(prevX, prevY, coords.x, coords.y, penColor);
-    sendEvent('draw', { prevX, prevY, currX: coords.x, currY: coords.y, color: penColor });
-
-    prevCoords.current = coords;
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-    prevCoords.current = null;
-  };
-
-  const clearLocalCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  const handleClearBoard = () => {
-    if (role !== 'teacher') return;
-    clearLocalCanvas();
-    sendEvent('clear', {});
-  };
-
-  const toggleRaiseHand = () => {
-    const newStatus = !handRaised;
-    setHandRaised(newStatus);
-    sendEvent('raise-hand', { studentName: userName, raised: newStatus });
-
-    if (newStatus) {
-      sendEvent('chat', { sender: 'النظام 🔔', content: `قام الطالب (${userName}) برفع اليد للاستئذان ✋` });
-    }
-  };
-
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    const msgData = { sender: `${userName} (${role === 'teacher' ? 'معلم' : 'طالب'})`, content: input };
-    sendEvent('chat', msgData);
-    setInput('');
-  };
+  const [role, setRole] = useState<'teacher' | 'student'>('teacher');
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 flex flex-col justify-between" dir="rtl">
-      <header className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center flex-wrap gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-indigo-400">غرفة الفصل الدراسي المباشر</h1>
-            <span className={`px-2 py-0.5 rounded text-[10px] ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-              {statusText}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400">إدارة الدور، التحكم بالسبورة، ورفع اليد في الوقت الفعلي</p>
-        </div>
-
-        <div className="flex items-center gap-3 bg-slate-800 p-1.5 rounded-lg border border-slate-700">
-          <button 
-            onClick={() => { setRole('teacher'); setUserName('المعلم'); }} 
-            className={`px-3 py-1 rounded text-xs font-bold transition ${role === 'teacher' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+    <main style={{ backgroundColor: '#020617', minHeight: '100vh', padding: '24px' }} dir="rtl">
+      <div style={{ maxWidth: '1200px', margin: '0 auto', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ color: '#f8fafc', fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
+          🏫 الفصل التفاعلي المباشر
+        </h1>
+        <div style={{ display: 'flex', backgroundColor: '#0f172a', padding: '4px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+          <button
+            type="button"
+            onClick={() => setRole('teacher')}
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: role === 'teacher' ? '#4f46e5' : 'transparent',
+              color: role === 'teacher' ? '#ffffff' : '#94a3b8',
+            }}
           >
-            وضع المعلم 👨‍🏫
+            👨‍🏫 وضع المعلم
           </button>
-          <button 
-            onClick={() => { setRole('student'); setUserName('طالب'); }} 
-            className={`px-3 py-1 rounded text-xs font-bold transition ${role === 'student' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          <button
+            type="button"
+            onClick={() => setRole('student')}
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: role === 'student' ? '#4f46e5' : 'transparent',
+              color: role === 'student' ? '#ffffff' : '#94a3b8',
+            }}
           >
-            وضع الطالب 👨‍🎓
+            👨‍🎓 وضع الطالب
           </button>
         </div>
+      </div>
 
-        <div className="flex gap-3 items-center">
-          <input 
-            type="text" 
-            value={userName} 
-            onChange={(e) => setUserName(e.target.value)}
-            className="bg-slate-800 border border-slate-700 px-3 py-1 rounded text-sm text-center"
-          />
-
-          {role === 'teacher' ? (
-            <>
-              <input 
-                type="color" 
-                value={penColor} 
-                onChange={(e) => setPenColor(e.target.value)}
-                className="w-8 h-8 rounded border-0 cursor-pointer bg-transparent"
-                title="اختر لون القلم"
-              />
-              <button onClick={handleClearBoard} className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 px-3 py-1 rounded text-xs font-medium">
-                مسح السبورة
-              </button>
-            </>
-          ) : (
-            <button 
-              onClick={toggleRaiseHand} 
-              className={`px-3 py-1 rounded text-xs font-medium border transition ${handRaised ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-slate-800 text-slate-300 border-slate-700'}`}
-            >
-              {handRaised ? '✋ اليد مرفوعة' : '✋ رفع اليد'}
-            </button>
-          )}
-        </div>
-      </header>
-
-      <main className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 my-4">
-        <div className="md:col-span-2 bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col justify-between items-center relative overflow-hidden min-h-[450px]">
-          <div className="absolute top-3 right-4 left-4 flex justify-between items-center text-xs text-slate-500 font-mono pointer-events-none z-10">
-            <span>{role === 'teacher' ? 'السبورة جاهزة للرسم' : 'وضع المشاهدة فقط (Read-only)'}</span>
-            {raisedHandsList.length > 0 && (
-              <span className="bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full border border-amber-500/40 font-sans font-bold animate-pulse">
-                ✋ الطلاب المستأذنون: {raisedHandsList.join(', ')}
-              </span>
-            )}
-          </div>
-          <canvas 
-            ref={canvasRef} 
-            width={1280} 
-            height={720}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            className={`w-full h-full bg-slate-900/60 rounded border border-slate-800 touch-none ${role === 'teacher' ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
-          />
-        </div>
-
-        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 flex flex-col justify-between">
-          <h2 className="text-sm font-semibold mb-3 text-slate-300">المحادثات المباشرة</h2>
-          <div className="flex-1 overflow-y-auto space-y-2 mb-4 max-h-[350px] p-2 bg-slate-900/50 rounded-lg">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`p-2 rounded text-sm border ${msg.sender?.includes('النظام') ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-slate-800 border-slate-700'}`}>
-                <span className="text-indigo-400 font-bold block text-xs">{msg.sender || 'مستخدم'}</span>
-                <span className="text-slate-200">{msg.content}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="اكتب رسالتك..."
-              className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white"
-            />
-            <button onClick={sendMessage} className="bg-indigo-600 px-4 py-2 rounded text-sm font-medium">إرسال</button>
-          </div>
-        </div>
-      </main>
-    </div>
+      <LiveClassroomRoom lessonId="demo-room" initialRole={role} />
+    </main>
   );
 }

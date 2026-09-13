@@ -8,6 +8,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface LiveClassroomRoomProps {
   lessonId: string;
+  initialRole?: 'teacher' | 'student';
 }
 
 interface ChatMessage {
@@ -15,11 +16,11 @@ interface ChatMessage {
   content: string;
 }
 
-export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) {
-  const [role, setRole] = useState<'teacher' | 'student'>('teacher');
+export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }: LiveClassroomRoomProps) {
+  const [role, setRole] = useState<'teacher' | 'student'>(initialRole);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [userName, setUserName] = useState('المعلم');
+  const [userName, setUserName] = useState(initialRole === 'teacher' ? 'المعلم' : 'طالب');
   const [penColor, setPenColor] = useState('#6366f1');
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHandsList, setRaisedHandsList] = useState<string[]>([]);
@@ -35,6 +36,15 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   useEffect(() => {
     userNameRef.current = userName;
   }, [userName]);
+
+  useEffect(() => {
+    setRole(initialRole);
+    if (initialRole === 'teacher' && userName === 'طالب') {
+      setUserName('المعلم');
+    } else if (initialRole === 'student' && userName === 'المعلم') {
+      setUserName('طالب');
+    }
+  }, [initialRole]);
 
   useEffect(() => {
     if (!SUPABASE_ANON_KEY) {
@@ -213,23 +223,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           </span>
         </div>
 
-        <div style={{ display: 'flex', backgroundColor: '#1e293b', padding: '4px', borderRadius: '10px', border: '1px solid #334155' }}>
-          <button
-            type="button"
-            onClick={() => { setRole('teacher'); setUserName('المعلم'); }}
-            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'teacher' ? '#4f46e5' : 'transparent', color: role === 'teacher' ? '#ffffff' : '#94a3b8' }}
-          >
-            👨‍🏫 وضع المعلم
-          </button>
-          <button
-            type="button"
-            onClick={() => { setRole('student'); setUserName('طالب'); }}
-            style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', backgroundColor: role === 'student' ? '#4f46e5' : 'transparent', color: role === 'student' ? '#ffffff' : '#94a3b8' }}
-          >
-            👨‍🎓 وضع الطالب
-          </button>
-        </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <input
             type="text"
@@ -277,18 +270,18 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة متاح مع زر الإزالة دائماً */}
+      {/* شريط الأيدي المرفوعة متاح دائماً وبجانب كل طالب زر ✕ أحمر واضح جداً */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
           {raisedHandsList.map((student) => (
-            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.8)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.9)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.5)', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
               <span>{student}</span>
               <button
                 type="button"
                 onClick={() => handleLowerSingleHand(student)}
                 style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '50%', width: '22px', height: '22px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '4px' }}
-                title="إزالة اليد المرفوعة"
+                title="تنزيل يد الطالب"
               >
                 ✕
               </button>
