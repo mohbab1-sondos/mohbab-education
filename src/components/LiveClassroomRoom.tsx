@@ -3,10 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
+const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -49,9 +47,17 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
   }, [initialRole]);
 
   useEffect(() => {
-    const channel = supabase.channel(`room_${lessonId}`, {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: {
+        params: {
+          eventsPerSecond: 20,
+        },
+      },
+    });
+
+    const channel = supabase.channel(`classroom_${lessonId}`, {
       config: {
-        broadcast: { self: true },
+        broadcast: { self: true, ack: false },
       },
     });
 
@@ -73,7 +79,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         }
       })
       .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
-        setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+        setRaisedHandsList((prev) => prev.filter((name) => name !== studentName(payload)));
         if (payload.studentName === userNameRef.current) {
           setHandRaised(false);
         }
@@ -91,14 +97,18 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
           setStatusText('متصل بالمزامنة المباشرة ●');
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
-          setStatusText('فشل الاتصال بالقناة (خطأ في المفتاح)');
+          setStatusText('خطأ في الاتصال بالسيرفر');
         } else {
           setIsConnected(false);
-          setStatusText(`حالة الاتصال: ${status}`);
+          setStatusText(`الحالة: ${status}`);
         }
       });
 
     channelRef.current = channel;
+
+    function studentName(payload: any) {
+      return payload.studentName;
+    }
 
     return () => {
       supabase.removeChannel(channel);
@@ -265,7 +275,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة */}
+      {/* شريط المستأذنين مع زر X للإزالة الفردية */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
