@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// تأكد من جلب المفتاح الصحيح هنا
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // ضع مفتاح anon الحقيقي هنا إن لم تضفه في Vercel
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -32,14 +31,18 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const [isDrawing, setIsDrawing] = useState(false);
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
+  const userNameRef = useRef(userName);
   useEffect(() => {
-    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('NEXT_PUBLIC')) {
-      setStatusText('خطأ: مفتاح SUPABASE_ANON_KEY غير صحيح');
+    userNameRef.current = userName;
+  }, [userName]);
+
+  useEffect(() => {
+    if (!SUPABASE_ANON_KEY) {
+      setStatusText('خطأ: مفتاح Supabase غير متوفر');
       return;
     }
 
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
     const channel = client.channel(`room_${lessonId}`, {
       config: {
         broadcast: { self: true },
@@ -59,10 +62,16 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
           setRaisedHandsList((prev) => Array.from(new Set([...prev, payload.studentName])));
         } else {
           setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+          if (payload.studentName === userNameRef.current) {
+            setHandRaised(false);
+          }
         }
       })
       .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
         setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
+        if (payload.studentName === userNameRef.current) {
+          setHandRaised(false);
+        }
       })
       .on('broadcast', { event: 'clear-hands' }, () => {
         setRaisedHandsList([]);
@@ -71,14 +80,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
       })
-      .subscribe((status: string, err: any) => {
+      .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
-          setStatusText('فشل الاتصال: مفتاح الـ API غير صالح');
-          console.error('Realtime Channel Error:', err);
+          setStatusText('فشل الاتصال بالقناة');
         } else {
           setIsConnected(false);
           setStatusText(`حالة الاتصال: ${status}`);
@@ -162,14 +170,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   };
 
   const handleLowerSingleHand = (studentName: string) => {
-    if (role !== 'teacher') return;
     setRaisedHandsList((prev) => prev.filter((name) => name !== studentName));
     sendBroadcast('lower-hand-single', { studentName });
   };
 
   const handleClearAllHands = () => {
-    if (role !== 'teacher') return;
     setRaisedHandsList([]);
+    setHandRaised(false);
     sendBroadcast('clear-hands', {});
   };
 
@@ -270,23 +277,21 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
         </div>
       </div>
 
-      {/* شريط الأيدي المرفوعة */}
+      {/* شريط الأيدي المرفوعة متاح مع زر الإزالة دائماً */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
           {raisedHandsList.map((student) => (
-            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.8)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {student}
-              {role === 'teacher' && (
-                <button
-                  type="button"
-                  onClick={() => handleLowerSingleHand(student)}
-                  style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                  title="تنزيل اليد"
-                >
-                  ✕
-                </button>
-              )}
+            <span key={student} style={{ backgroundColor: 'rgba(146, 64, 14, 0.8)', color: '#ffffff', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <span>{student}</span>
+              <button
+                type="button"
+                onClick={() => handleLowerSingleHand(student)}
+                style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none', borderRadius: '50%', width: '22px', height: '22px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '4px' }}
+                title="إزالة اليد المرفوعة"
+              >
+                ✕
+              </button>
             </span>
           ))}
         </div>
