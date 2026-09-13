@@ -3,8 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxendveHN5eXV2cWlmcGVhcGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI5NDYsImV4cCI6MjEwNDAxODk0Nn0.w6fCaksJRe_39wyh4r4-nrXhkY-kafT9XqmI-tcGRSg';
+
+// إنشاء العميل مرة واحدة خارج المكون لتجنب تكرار الاتصالات
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -47,15 +50,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
   }, [initialRole]);
 
   useEffect(() => {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: {
-        params: {
-          eventsPerSecond: 20,
-        },
-      },
-    });
-
-    const channel = supabase.channel(`classroom_${lessonId}`, {
+    const channel = supabase.channel(`room_${lessonId}`, {
       config: {
         broadcast: { self: true, ack: false },
       },
@@ -79,7 +74,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         }
       })
       .on('broadcast', { event: 'lower-hand-single' }, ({ payload }) => {
-        setRaisedHandsList((prev) => prev.filter((name) => name !== studentName(payload)));
+        setRaisedHandsList((prev) => prev.filter((name) => name !== payload.studentName));
         if (payload.studentName === userNameRef.current) {
           setHandRaised(false);
         }
@@ -91,24 +86,24 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
       })
-      .subscribe((status: string) => {
+      .subscribe((status: string, err?: Error) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
-          setStatusText('خطأ في الاتصال بالسيرفر');
+          setStatusText('فشل الاتصال - يرجى مراجعة إعدادات Realtime');
+          console.error('Supabase Realtime Error:', err);
+        } else if (status === 'TIMED_OUT') {
+          setIsConnected(false);
+          setStatusText('انتهت مهلة الاتصال بالشبكة');
         } else {
           setIsConnected(false);
-          setStatusText(`الحالة: ${status}`);
+          setStatusText(`جاري الاتصال... (${status})`);
         }
       });
 
     channelRef.current = channel;
-
-    function studentName(payload: any) {
-      return payload.studentName;
-    }
 
     return () => {
       supabase.removeChannel(channel);
@@ -275,7 +270,7 @@ export default function LiveClassroomRoom({ lessonId, initialRole = 'teacher' }:
         </div>
       </div>
 
-      {/* شريط المستأذنين مع زر X للإزالة الفردية */}
+      {/* شريط المستأذنين */}
       {raisedHandsList.length > 0 && (
         <div style={{ backgroundColor: 'rgba(120, 53, 15, 0.4)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: '#fef3c7', fontSize: '13px', fontWeight: 'bold' }}>✋ المستأذنون حالياً:</span>
