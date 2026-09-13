@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
+// تأكد من جلب المفتاح الصحيح هنا
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aqzwoxsyyuvqifpeapfi.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // ضع مفتاح anon الحقيقي هنا إن لم تضفه في Vercel
 
 interface LiveClassroomRoomProps {
   lessonId: string;
@@ -32,20 +33,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
   const prevCoords = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    if (!SUPABASE_ANON_KEY) {
-      setStatusText('خطأ: يرجى إدخال SUPABASE_ANON_KEY في بيئة العمل');
+    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('NEXT_PUBLIC')) {
+      setStatusText('خطأ: مفتاح SUPABASE_ANON_KEY غير صحيح');
       return;
     }
 
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: {
-        params: {
-          eventsPerSecond: 10,
-        },
-      },
-    });
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 1. إنشاء قناة فريدة تشمل Broadcast و Postgres Changes معاً
     const channel = client.channel(`room_${lessonId}`, {
       config: {
         broadcast: { self: true },
@@ -53,7 +47,6 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
       },
     });
 
-    // 2. الاستماع لأحداث البث المباشر (Broadcast Events)
     channel
       .on('broadcast', { event: 'draw' }, ({ payload }) => {
         drawOnCanvas(payload.prevX, payload.prevY, payload.currX, payload.currY, payload.color);
@@ -78,26 +71,13 @@ export default function LiveClassroomRoom({ lessonId }: LiveClassroomRoomProps) 
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         setMessages((prev) => [...prev, payload]);
       })
-      // 3. الاستماع لتغييرات قاعدة البيانات صراحة (Database Changes)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'classroom_events',
-          filter: `lesson_id=eq.${lessonId}`,
-        },
-        (payload) => {
-          console.log('Database Change Received:', payload);
-        }
-      )
       .subscribe((status: string, err: any) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setStatusText('متصل بالمزامنة المباشرة ●');
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
-          setStatusText('فشل الاتصال بالقناة (تأكد من إعدادات Supabase)');
+          setStatusText('فشل الاتصال: مفتاح الـ API غير صالح');
           console.error('Realtime Channel Error:', err);
         } else {
           setIsConnected(false);
